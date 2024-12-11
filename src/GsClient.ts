@@ -5,7 +5,7 @@ import { Call } from './Call.js';
 import { simplifyEvent } from './minimizer.js';
 import { v4 as uuidv4 } from 'uuid';
 import {openSync, writeSync} from "node:fs";
-import {CompressionTypes, Kafka, KafkaConfig} from 'kafkajs';
+import {CompressionTypes, Kafka, KafkaConfig, Partitioners, Producer} from 'kafkajs';
 
 enum bucketTypes {
     HOUR = 'HOUR',
@@ -47,7 +47,7 @@ export interface Environment {
     KAFKA_HOST: string | undefined;
     KAFKA_USER: string | undefined;
     KAFKA_PASSWORD: string | undefined;
-    KAFKA_TOPIC: string | undefined;
+    KAFKA_TOPIC: string;
     KAFKA_CLIENT_ID: string | undefined;
 }
 
@@ -68,6 +68,7 @@ export const errorCodeMappings: { [id: string] : string; } = {
     '1013': 'Try Again Later',
     '1014': 'Bad Gateway',
     '1015': 'TLS Handshake',
+    '4408': 'Connection initialisation timeout',
     '4409': 'Too many requests',
 };
 
@@ -92,7 +93,7 @@ export class GsClient {
     private client: Client | undefined;
     private client_id: any = undefined;
     private kafka: Kafka | undefined;
-    private kafkaProducer: any | undefined;
+    private kafkaProducer: Producer | undefined;
 
     public constructor(env: Environment, wsUrl: string, oauthUrl: string, oauthOptions: OAuthOptions, call: Call) {
         this.offset = env.OFFSET;
@@ -110,50 +111,55 @@ export class GsClient {
             this.json_file = openSync('./events.json','w');
 
         if (this.env.KAFKA_ENABLED && this.env.KAFKA_HOST) {
+            log.debug('Setting up Kafka connection')
             let kafkaConfig: KafkaConfig = {
                 brokers: this.env.KAFKA_HOST.split(','),
-                clientId: 'ohip-shovel'
+                clientId:this.env.KAFKA_CLIENT_ID,
+                connectionTimeout: 30000,
             };
             if (this.env.KAFKA_USER !== undefined && this.env.KAFKA_PASSWORD !== undefined) {
                 kafkaConfig['sasl'] = {
                     mechanism: 'plain',
-                        username: this.env.KAFKA_USER,
-                        password: this.env.KAFKA_PASSWORD,
+                    username: this.env.KAFKA_USER,
+                    password: this.env.KAFKA_PASSWORD,
                 }
             }
             this.kafka = new Kafka(kafkaConfig)
             this.kafkaProducer = this.getProducer(this.kafka);
+            log.debug(`Kafka configured to write to topic ${this.env.KAFKA_TOPIC}`)
         }
         this.registerShutdownHook(); // make sure to dispose and terminate the client on shutdown
     }
 
-    public getProducer(kafka: Kafka): any {
+    public getProducer(kafka: Kafka): Producer {
         let kafkaProducer = kafka.producer({
             allowAutoTopicCreation: true,
             transactionTimeout: 30000,
-            maxInFlightRequests: 1
+            maxInFlightRequests: 1,
+            createPartitioner: Partitioners.LegacyPartitioner,
         })
-        kafkaProducer.connect()
         return kafkaProducer
     }
 
-    public registerShutdownHook(): void {
-        process.on('SIGINT', () => {
+    public async registerShutdownHook(): Promise<void> {
+        process.on('SIGINT', async () => {
             log.info('Received SIGINT signal');
-            this.terminateClient('SIGINT');
+            await this.terminateClient('SIGINT');
             setTimeout(process.exit(0), 2000);
         });
-        process.on('SIGTERM', () => {
+        process.on('SIGTERM', async () => {
             log.info('Received SIGTERM signal');
-            this.terminateClient('SIGTERM');
+            await this.terminateClient('SIGTERM');
             setTimeout(process.exit(0), 2000);
         });
     }
 
-    public terminateClient(reason: string): void {
+    public async terminateClient(reason: string): Promise<void> {
         log.info(`Terminating client: ${reason}`)
         if (this.kafkaProducer !== undefined) {
-            this.kafkaProducer.disconnect();
+            log.info('Disconnecting from Kafka')
+            await this.kafkaProducer.disconnect();
+            log.info('Disconnected from Kafka')
         }
         if (this.offset !== undefined) {
             log.info(`Last offset processed: ${this.offset}`);
@@ -311,7 +317,7 @@ export class GsClient {
     }
 
     private setStat(eventName: string): void {
-        this.windowCount = this.windowCount + 1; 
+        this.windowCount = this.windowCount + 1;
         // total events per event type
         if (!this.statsSummary[eventName]){
             this.statsSummary[eventName] = 1;
@@ -355,7 +361,7 @@ export class GsClient {
     }
 
     public async startConsuming (reconnect: boolean = false, reason: string = '') {
-        this.terminateClient(`Refreshing connection with new token`);
+        await this.terminateClient(`Refreshing connection with new token`);
         if (reconnect) {
             log.debug(`Refreshing an existing connection in ${this.env.TIMER}ms (${reason})`);
             await this.delay(this.env.TIMER);
@@ -363,8 +369,9 @@ export class GsClient {
             log.debug('Initiating a new connection');
         }
         this.client = this.getClient();
-        if (this.kafka)
-            this.kafkaProducer = this.getProducer(this.kafka);
+        if (this.kafkaProducer !== undefined)
+            await this.kafkaProducer.connect()
+
         try {
             await this.subscribe(this.client);
         } catch (error) {
@@ -376,7 +383,9 @@ export class GsClient {
 
     public async stopConsuming (reconnect: boolean = false) {
         try {
-            if (!reconnect) this.terminateClient('Application stopped by user');
+            if (!reconnect) {
+                await this.terminateClient('Application stopped by user');
+            }
             process.exit(0);
         } catch (error) {
             log.error(error);
