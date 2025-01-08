@@ -10,9 +10,9 @@
    "scripts": {
       "lint": "eslint -c .eslintrc --ext .ts ./src",
       "lint-fix": "eslint -c .eslintrc --ext .ts ./src --fix ",
-      "postinstall": "npx tsc",
-      "dev": "tsc-watch --onSuccess \"node ./build/app.js\"",
-      "start": "npx tsc && node --max-old-space-size=8192 ./build/app.js"
+      "postinstall": "npx tsc && node src/index.js",
+      "dev": "tsc-watch --onSuccess \"node ./build/app.js\" && node src/index.js",
+      "start": "npx tsc && node --max-old-space-size=8192 ./build/app.js && node src/index.js"
    },
    "author": "Luis Weir",
    "license": "ISC",
