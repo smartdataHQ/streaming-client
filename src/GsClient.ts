@@ -49,6 +49,7 @@ export interface Environment {
     KAFKA_PASSWORD: string | undefined;
     KAFKA_TOPIC: string;
     KAFKA_CLIENT_ID: string | undefined;
+    EXTRA_PAYLOAD_VALS: string | undefined;
 }
 
 export const errorCodeMappings: { [id: string] : string; } = {
@@ -114,7 +115,7 @@ export class GsClient {
             log.debug('Setting up Kafka connection')
             let kafkaConfig: KafkaConfig = {
                 brokers: this.env.KAFKA_HOST.split(','),
-                clientId:this.env.KAFKA_CLIENT_ID,
+                clientId: this.env.KAFKA_CLIENT_ID,
                 connectionTimeout: 30000,
             };
             if (this.env.KAFKA_USER !== undefined && this.env.KAFKA_PASSWORD !== undefined) {

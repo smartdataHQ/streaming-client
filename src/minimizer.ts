@@ -92,13 +92,26 @@ export function simplifyEvent(data: any, env: Environment): unknown {
     let isoDate = aDate.toISOString()
     isoDate = isoDate.replaceAll(parts[6].slice(0,3)+'Z', parts[6]+'Z')
 
+    // add any extra values to the payload before returning it
+    let extraPayloadVals = {};
+    try {
+        if (env.EXTRA_PAYLOAD_VALS) {
+            // Attempt to parse the environment variable as JSON
+            extraPayloadVals = JSON.parse(env.EXTRA_PAYLOAD_VALS);
+        }
+    } catch (error) {
+        // Log the error and proceed with an empty object
+        log.error("Failed to parse EXTRA_PAYLOAD_VALS:", error);
+    }
+
     return {
         "type": "track",
         // "event": data.newEvent.moduleName + ': ' + data.newEvent.eventName,
         "event": data.newEvent.eventName,
         "timestamp": isoDate,
         "properties": new_properties,
-        "event_id": data.newEvent.metadata.uniqueEventId
+        "event_id": data.newEvent.metadata.uniqueEventId,
+        ...extraPayloadVals // Safely include the parsed values or nothing
     };
 }
 
@@ -138,6 +151,7 @@ export function simplifyEvent(data: any, env: Environment): unknown {
 //     KAFKA_USER: '',
 //     KAFKA_PASSWORD: '',
 //     KAFKA_CLIENT_ID: '',
+//     EXTRA_PAYLOAD_VALS: '{"partition": "test-domain.is"}',
 // };
 // fs.readFile('eventTest2.json', 'utf8', (err, data) => { 
 //     if (err)

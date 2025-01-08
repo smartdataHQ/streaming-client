@@ -39,6 +39,7 @@ const env: Environment = {
     KAFKA_PASSWORD: process.env.KAFKA_PASSWORD,
     KAFKA_TOPIC: process.env.KAFKA_TOPIC || 'ohip-events',
     KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID || 'gs-client',
+    EXTRA_PAYLOAD_VALS: process.env.EXTRA_PAYLOAD_VALS || undefined,
 };
 
 // required to fetch OAuth Token
