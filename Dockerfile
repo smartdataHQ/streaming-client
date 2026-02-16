@@ -1,4 +1,4 @@
-FROM node:20.5.1-bullseye AS install
+FROM node:20.5.1-bullseye as install
 
 RUN mkdir -p /src
 WORKDIR /src
